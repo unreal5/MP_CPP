@@ -18,6 +18,8 @@ AMP_Armor::AMP_Armor()
 	// Create Sphere Mesh
 	SphereMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Sphere Mesh"));
 	SphereMesh->SetupAttachment(RootComponent);
+	SphereMesh->SetIsReplicated(true);
+	
 	// Create Sphere Collision
 	SphereCollision = CreateDefaultSubobject<USphereComponent>(TEXT("SphereCollision"));
 	SphereCollision->SetupAttachment(RootComponent);

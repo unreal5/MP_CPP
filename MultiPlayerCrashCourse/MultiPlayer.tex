@@ -1,0 +1,137 @@
+\documentclass[CJKmath=true,10pt]{MyBook}
+
+
+\usepackage{graphicx,float}
+
+\newcommand{\cgc}[3][]{
+\begin{figure}[H]
+\centering
+\includegraphics[#1]{#2}
+\caption{#3}
+\end{figure}}
+
+\begin{document}
+
+%\frontmatter\tableofcontents
+\mainmatter
+\setchapterimage{./images/055}
+\chapter{Actor Replicates}
+\section{Actor 复制核心属性}
+Unreal Engine 中的 Actor 支持网络复制，主要通过以下三个属性控制：
+\begin{enumerate}
+	\item \textbf{NetLoadOnClient}: 决定 Actor 是否在地图加载时于客户端加载。若为 \texttt{false}，Actor 仅存在于服务器。
+	\item \textbf{Replicates}: 标记 Actor 是否进行网络复制。若为 \texttt{true}，它会强制开启 \texttt{NetLoadOnClient}，并允许变量进行网络同步。
+	\item \textbf{ReplicateMovement}: 独立控制移动数据的复制。即使 \texttt{Replicates} 为 \texttt{true}，若此项为 \texttt{false}，Actor 的位置和旋转变动也不会同步到客户端。
+\end{enumerate}
+
+\subsection{C++ 中的实现细节}
+在 C++类 的构造函数中初始化这些属性时需遵循特定规则：
+\begin{itemize}
+	\item \textbf{bNetLoadOnClient}: 直接赋值 \ci{bNetLoadOnClient = true;}。
+	\item \textbf{bReplicates}: 直接赋值 \ci{bReplicates = true;}。避免使用 \ci{SetReplicates()} 函数，因为它是为运行时设计的，在构造函数中调用会触发警告。
+	\item \textbf{ReplicateMovement}: 由于成员变量是私有的，且 \ci{SetReplicateMovement()} 是虚函数（\emph{不应在构造函数中调用虚函数}），应使用非虚函数 \ci{SetReplicatingMovement(true);} 来设置。
+\end{itemize}
+
+\subsection{橡皮筋效应 (Rubber Banding)}
+当服务器与客户端的数据不同步时，会出现“橡皮筋效应”：
+\begin{itemize}
+	\item \textbf{现象}: 玩家尝试移动，但被服务器强制拉回原位。
+	\item \textbf{成因}: 例如客户端看不到某个阻挡物（\ci{NetLoadOnClient = false}），尝试穿过它；或者物体在两端位置不一致。服务器检测到非法移动并进行修正。
+	\item \textbf{解决}: 确保阻挡玩家的物体在客户端加载，并且开启移动复制以保持位置同步。
+\end{itemize}
+
+\subsection{物理模拟与 Root Component}
+对于启用了物理模拟（Simulate Physics）的组件，复制行为主要依赖于它是否为 Root Component：
+\begin{itemize}
+	\item \textbf{问题}: 如果一个 Static Mesh 模拟物理但\textbf{不是} 根组件，\ci{ReplicateMovement} 只会同步 Root 的位置，导致 Mesh 在客户端与服务器的位置不一致（Root 不动，Mesh 掉落或滚动）。
+	\item \textbf{解决方案}: 将模拟物理的组件设置为 Actor 的 \textbf{Root Component}。这样 \ci{ReplicateMovement} 就能正确同步物理模拟后的实际位置。
+\end{itemize}
+
+\section{权限 (Authority) 与 网络角色 (Net Role)}
+
+在多人游戏中，Authority 和 Net Role 是决定 Actor 由谁控制以及如何在网络中同步的核心概念。
+
+\subsubsection{权限 (Authority)}
+Authority 定义了哪个机器“拥有”该 Actor 并负责其逻辑判断。
+\begin{itemize}
+	\item \textbf{服务器权限}: 大多数 Replicated Actor（在服务器生成或放置在地图中）在服务器上具有 Authority。服务器负责权威逻辑。
+	\item \textbf{客户端权限}: 仅当 Actor 是由客户端生成（Spawn）且不进行网络复制时，该客户端拥有 Authority。
+	\item \textbf{HasAuthority()}: 可以调用此函数检查当前 Actor 实例是否拥有权限（通常用于判断当前代码是否运行在服务器上）。
+\end{itemize}
+
+\subsubsection{网络角色 (Net Role)}
+每个 Actor 在不同机器上都有特定的网络角色 (\ci{ENetRole})，分为 \textbf{Local Role}（本地角色）和 \textbf{Remote Role}（远程角色）。
+
+\textbf{常见的 Local Net Role 类型}:
+\begin{itemize}
+	\item \textbf{Authority}: 拥有该 Actor 的机器（通常是服务器）。
+	\item \textbf{Autonomous Proxy}: 在客户端机器上，由该客户端 \textbf{本地控制} 的 Character 或 Pawn（例如玩家自己的角色）。它有权进行预测性移动。
+	\item \textbf{Simulated Proxy}: 在客户端机器上，由服务器或其他客户端控制的 Character，或者是其他非玩家控制的 Replicated Actor（如移动的方块）。客户端只负责根据服务器数据模拟其状态。
+\end{itemize}
+
+\subsubsection{Remote Role (远程角色)}
+\textbf{Remote Role} 指的是相对于当前机器，该 Actor 在远程机器上的角色。
+\begin{itemize}
+	\item 在 \textbf{客户端} 上检查 \ci{GetRemoteRole()}，通常返回 \ci{Authority}（因为服务器拥有它）。
+	\item 在 \textbf{服务器} 上检查 \ci{GetRemoteRole()}，通常返回 \ci{SimulatedProxy}。即使该 Actor 在某个客户端是 \ci{Autonomous Proxy}，服务器端查询 Remote Role 时也可能显示为 \ci{Simulated Proxy}\footnote{这是一个常见的误区，需注意 \ci{GetRemoteRole} 的行为}。
+\end{itemize}
+
+\subsubsection{调试与工具}
+可以通过创建蓝图函数库（Blueprint Function Library）来辅助调试：
+\begin{itemize}
+	\item 使用 \ci{GetLocalRole()} 获取当前实例的角色。
+	\item 使用 \ci{GetRemoteRole()} 获取远程机器上的角色。
+	\item 将 Enum 转换为字符串输出日志，可以清晰地看到同一个 Actor 在 Server（Authority）、Owner Client（Autonomous）和其他 Client（Simulated）上的不同状态。
+\end{itemize}
+
+\section{多人游戏中的附件 (Attachment)}
+
+在多人游戏中，将一个 Actor 或 Component 附加到另一个 Actor 上（例如给角色装备护甲或武器）时，需要特别注意网络复制（Replication）的规则，以确保服务器和客户端的表现一致。
+
+\subsection{Actor 级别的附件 (Actor Attachment)}
+将一个完整的 Actor 附加到另一个 Actor 上（例如通过 \texttt{AttachToActor}）：
+\begin{itemize}
+	\item \textbf{前提条件}: 被附加的 Actor 必须标记为 \textbf{Replicates}（\texttt{SetReplicates(true)}）。
+	\item \textbf{行为}: 如果 Actor 是 Replicated 的，并且在服务器上执行了 \texttt{AttachToActor}，该附件关系会自动复制到所有客户端。
+	\item \textbf{流程}:
+	\begin{enumerate}
+		\item 在服务器上检测到触发事件（如 Overlap）。
+		\item 检查权限 \texttt{HasAuthority()}，确保仅在服务器执行。
+		\item 调用 \texttt{AttachToActor}。
+		\item 引擎自动将此附件关系由服务器同步至客户端。
+	\end{enumerate}
+\end{itemize}
+从源代码分析：Actor级别的挂接（attachment）只会将\ci{Root}组件挂接到目标Actor的\ci{Root}组件。
+\subsection{Component 级别的附件 (Component Attachment)}
+现在对代码是否位于服务器进行检测，如果位于服务器则将组件挂接到目标Actor指定的位置：
+\begin{code}
+if (!HasAuthority()) return;
+
+// AttachToActor只挂接到OtherActor的根组件上，而Character的根组件是CapsuleComponent，不是想要的Mesh组件
+//AttachToActor(OtherActor, FAttachmentTransformRules::SnapToTargetNotIncludingScale, "ArmorSocket");
+ACharacter* Character = Cast<ACharacter>(OtherActor);
+if (!Character) return;
+SphereMesh->AttachToComponent(Character->GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale,
+"ArmorSocket");
+\end{code}
+
+运行后，无论Armor 是否设置\ci{Replicates}，客户端与服务端不能同步，表现为：无论玩家控制客户端还是服务端拾取Armor，均只能在服务端上显示Armor挂接到指定socket。
+
+将一个 Actor 内部的某个 Component 附加到另一个 Actor 的 Component 上（通过 \ci{AttachToComponent}，常用于绑定到骨骼插槽 Socket）：
+\begin{itemize}
+	\item \textbf{关键点}: 仅仅 Actor 是 Replicated 的还不够。如果附件操作是针对 Component 的，那么该 Component 自身必须被标记为 \textbf{*Replicated Component}。
+	\item \textbf{设置方法}: 在 C++ 构造函数中，对该 Component 调用 \texttt{SetIsReplicated(true)}。
+	\item \textbf{行为}:
+	\begin{itemize}
+		\item 如果 Component 未设置为 Replicated：在服务器执行 \texttt{AttachToComponent} 后，只有服务器会看到附件变化，客户端不会更新。
+		\item 如果 Component 设置为 Replicated：服务器上的附件操作会自动同步到客户端，客户端也能看到Component附着在正确的位置（如角色的头部或脚部 Socket）。
+	\end{itemize}
+\end{itemize}
+
+\subsection{最佳实践与性能提示}
+虽然将 Component 设置为 Replicated 可以解决附件同步问题，但这会增加网络带宽开销（Overhead）。
+\begin{itemize}
+	\item 每个 Replicated Component 都会占用网络资源。
+	\item 对于复杂的装备系统，通常不仅仅依赖 Component Replication，而是倾向于使用变量复制（Replicated Variables）配合 \texttt{OnRep} 函数。即复制一个状态变量，当客户端收到变量更新时，在本地执行附加逻辑，从而节省带宽。
+\end{itemize}
+\end{document}

@@ -103,6 +103,7 @@ Authority 定义了哪个机器“拥有”该 Actor 并负责其逻辑判断。
 \end{itemize}
 从源代码分析：Actor级别的挂接（attachment）只会将\ci{Root}组件挂接到目标Actor的\ci{Root}组件。
 \subsection{Component 级别的附件 (Component Attachment)}
+\begin{examplebox}
 现在对代码是否位于服务器进行检测，如果位于服务器则将组件挂接到目标Actor指定的位置：
 \begin{code}
 if (!HasAuthority()) return;
@@ -116,7 +117,7 @@ SphereMesh->AttachToComponent(Character->GetMesh(), FAttachmentTransformRules::S
 \end{code}
 
 运行后，无论Armor 是否设置\ci{Replicates}，客户端与服务端不能同步，表现为：无论玩家控制客户端还是服务端拾取Armor，均只能在服务端上显示Armor挂接到指定socket。
-
+\end{examplebox}
 将一个 Actor 内部的某个 Component 附加到另一个 Actor 的 Component 上（通过 \ci{AttachToComponent}，常用于绑定到骨骼插槽 Socket）：
 \begin{itemize}
 	\item \textbf{关键点}: 仅仅 Actor 是 Replicated 的还不够。如果附件操作是针对 Component 的，那么该 Component 自身必须被标记为 \textbf{*Replicated Component}。
@@ -127,11 +128,62 @@ SphereMesh->AttachToComponent(Character->GetMesh(), FAttachmentTransformRules::S
 		\item 如果 Component 设置为 Replicated：服务器上的附件操作会自动同步到客户端，客户端也能看到Component附着在正确的位置（如角色的头部或脚部 Socket）。
 	\end{itemize}
 \end{itemize}
-
+因此对于组件级别的挂接，需要设置组件的Replicates。代码如下：
+\begin{code}[caption={在构造函数中}]
+\end{code}
 \subsection{最佳实践与性能提示}
 虽然将 Component 设置为 Replicated 可以解决附件同步问题，但这会增加网络带宽开销（Overhead）。
-\begin{itemize}
+\begin{itemize}\small
 	\item 每个 Replicated Component 都会占用网络资源。
-	\item 对于复杂的装备系统，通常不仅仅依赖 Component Replication，而是倾向于使用变量复制（Replicated Variables）配合 \texttt{OnRep} 函数。即复制一个状态变量，当客户端收到变量更新时，在本地执行附加逻辑，从而节省带宽。
+	\item 对于复杂的装备系统，通常不仅仅依赖 Component Replication，而是\emph{倾向于使用变量复制}（Replicated Variables）配合 \texttt{OnRep} 函数。即复制一个状态变量，当客户端收到变量更新时，在本地执行附加逻辑，从而节省带宽。
+\end{itemize}
+
+
+\section{变量复制 (Variable Replication)}
+
+变量复制允许服务器上的变量变化自动同步到所有客户端。要实现这一点，必须遵循以下步骤和规则：
+
+\subsection{实现变量复制的三个步骤}
+确保拥有变量的 Actor 本身已开启复制（\texttt{bReplicates = true}），然后在 C++ 中执行以下操作：
+
+\begin{enumerate}
+	\item \textbf{重写 GetLifetimeReplicatedProps 函数}:
+	在头文件中声明，在源文件中实现此虚函数。它是配置复制规则的地方。
+	\begin{code}
+virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+	\end{code}
+	
+	\item \textbf{标记变量为 Replicated}:
+	在变量定义的 \texttt{UPROPERTY} 宏中添加 \texttt{Replicated} 标识符。
+	\begin{code}
+UPROPERTY(Replicated)
+float Armor;
+	\end{code}
+	
+	\item \textbf{注册复制变量 (DOREPLIFETIME)}:
+	在 \texttt{GetLifetimeReplicatedProps} 的实现中，使用 \ci{DOREPLIFETIME} 宏注册该变量。需包含头文件 \texttt{"Net/UnrealNetwork.h"}。
+	\begin{code}
+#include "Net/UnrealNetwork.h"
+void AMyCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+	DOREPLIFETIME(AMyCharacter, Armor);
+}
+	\end{code}
+\end{enumerate}
+
+\subsection{重要原则}
+\begin{itemize}
+	\item \textbf{服务器权威}: 只有服务器上对 Replicated 变量的修改才会同步给客户端。如果客户端自己修改了该变量，这个修改只在本地生效，不会发给服务器或其他客户端，且随时可能被服务器的正确值覆盖。
+	\item \textbf{单向同步}: 默认情况下，复制是单向的（Server $\rightarrow$ Client）。
+	\item \textbf{Actor 复制前提}: 如果 Actor 自身的 \texttt{Replicates} 属性为 \texttt{false}，即使代码中正确配置了变量复制，变量也不会进行网络传输。
+\end{itemize}
+
+\subsection{最佳实践：使用接口解耦}
+在处理交互逻辑（如拾取护甲）时，推荐使用 \textbf{Interface (接口)} 来避免硬编码依赖具体的 Actor 类（如 Character）。
+\begin{itemize}
+	\item 创建一个 Interface（如 \texttt{UMPPlayer}），定义 \texttt{GrantArmor} 等函数。
+	\item Armor Actor 检测到重叠时，检查对方是否实现了接口，并调用接口函数。
+	\item Character 实现接口，并在 \texttt{GrantArmor} 中修改自己的 Replicated 变量。
 \end{itemize}
 \end{document}

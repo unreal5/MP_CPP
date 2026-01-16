@@ -1,4 +1,3 @@
-
 #include "MP_CPPCharacter.h"
 #include "Engine/LocalPlayer.h"
 #include "Camera/CameraComponent.h"
@@ -10,6 +9,10 @@
 #include "EnhancedInputSubsystems.h"
 #include "InputActionValue.h"
 #include "MP_CPP.h"
+#include "Components/TextBlock.h"
+#include "Components/WidgetComponent.h"
+#include "Net/UnrealNetwork.h"
+#include "UI/OverheadUserWidget.h"
 
 AMP_CPPCharacter::AMP_CPPCharacter()
 {
@@ -32,25 +35,31 @@ AMP_CPPCharacter::AMP_CPPCharacter()
 	FollowCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FollowCamera"));
 	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
 	FollowCamera->bUsePawnControlRotation = false;
+
+	OverheadWidgetComponent = CreateDefaultSubobject<UWidgetComponent>(TEXT("OverheadWidgetComponent"));
+	OverheadWidgetComponent->SetupAttachment(RootComponent);
+	OverheadWidgetComponent->SetWidgetSpace(EWidgetSpace::Screen);
+	OverheadWidgetComponent->SetRelativeLocation(FVector(0.f, 0.f, 120.f));
 }
 
 void AMP_CPPCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
-	if (UEnhancedInputComponent* EnhancedInputComponent = Cast<UEnhancedInputComponent>(PlayerInputComponent)) {
-		auto JumpActionLambda = [this](auto, bool IsJumping)
-			{
-				IsJumping ? Jump() : StopJumping();
-			};
-		EnhancedInputComponent->BindActionValueLambda(JumpAction, ETriggerEvent::Started, JumpActionLambda, true);
-		EnhancedInputComponent->BindActionValueLambda(JumpAction, ETriggerEvent::Completed, JumpActionLambda, false);
-		EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Triggered, this, &AMP_CPPCharacter::Move);
-		EnhancedInputComponent->BindAction(MouseLookAction, ETriggerEvent::Triggered, this, &AMP_CPPCharacter::Look);
-		EnhancedInputComponent->BindAction(LookAction, ETriggerEvent::Triggered, this, &AMP_CPPCharacter::Look);
-	}
-	else
+	UEnhancedInputComponent* EnhancedInputComponent = Cast<UEnhancedInputComponent>(PlayerInputComponent);
+	if (!EnhancedInputComponent)
 	{
-		UE_LOG(LogMP_CPP, Error, TEXT("'%s' Failed to find an Enhanced Input component! This template is built to use the Enhanced Input system. If you intend to use the legacy system, then you will need to update this C++ file."), *GetNameSafe(this));
+		UE_LOG(LogMP_CPP, Error, TEXT( "'%s' " ), *GetNameSafe(this));
+		return;
 	}
+
+	auto JumpActionLambda = [this](auto, bool IsJumping)
+	{
+		IsJumping ? Jump() : StopJumping();
+	};
+	EnhancedInputComponent->BindActionValueLambda(JumpAction, ETriggerEvent::Started, JumpActionLambda, true);
+	EnhancedInputComponent->BindActionValueLambda(JumpAction, ETriggerEvent::Completed, JumpActionLambda, false);
+	EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Triggered, this, &AMP_CPPCharacter::Move);
+	EnhancedInputComponent->BindAction(MouseLookAction, ETriggerEvent::Triggered, this, &AMP_CPPCharacter::Look);
+	EnhancedInputComponent->BindAction(LookAction, ETriggerEvent::Triggered, this, &AMP_CPPCharacter::Look);
 }
 
 void AMP_CPPCharacter::Move(const FInputActionValue& Value)
@@ -95,4 +104,33 @@ void AMP_CPPCharacter::DoJumpStart()
 void AMP_CPPCharacter::DoJumpEnd()
 {
 	StopJumping();
+}
+
+USkeletalMeshComponent* AMP_CPPCharacter::GetMeshComponent_Implementation()
+{
+	return GetMesh();
+}
+
+void AMP_CPPCharacter::GrantArmor_Implementation(int32 ArmorAmount)
+{
+	Armor += ArmorAmount;
+	// 自身也需要更新
+	OnRep_Armor(Armor);
+}
+
+void AMP_CPPCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+	DOREPLIFETIME(ThisClass, Armor);
+}
+
+void AMP_CPPCharacter::OnRep_Armor(int32 OldArmor)
+{
+	auto Overhead = Cast<UOverheadUserWidget>(OverheadWidgetComponent->GetWidget());
+
+	if (!IsValid(Overhead)) return;
+
+	FString ArmorString = FString::Printf(TEXT("护甲值：%d"), Armor);
+	Overhead->ArmorValueText->SetText(FText::FromString(ArmorString));
 }

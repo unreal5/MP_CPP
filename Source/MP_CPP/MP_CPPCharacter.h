@@ -4,7 +4,9 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
+#include "Interact/MP_Player.h"
 #include "Logging/LogMacros.h"
+#include "Interact/MP_Player.h"
 #include "MP_CPPCharacter.generated.h"
 
 class USpringArmComponent;
@@ -19,7 +21,7 @@ DECLARE_LOG_CATEGORY_EXTERN(LogTemplateCharacter, Log, All);
  *  Implements a controllable orbiting camera
  */
 UCLASS(abstract)
-class AMP_CPPCharacter : public ACharacter
+class AMP_CPPCharacter : public ACharacter, public IMP_Player
 {
 	GENERATED_BODY()
 
@@ -30,9 +32,10 @@ class AMP_CPPCharacter : public ACharacter
 	/** Follow camera */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components", meta = (AllowPrivateAccess = "true"))
 	UCameraComponent* FollowCamera;
-	
-protected:
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components", meta = (AllowPrivateAccess = "true"))
+	class UWidgetComponent* OverheadWidgetComponent;
+protected:
 	/** Jump Input Action */
 	UPROPERTY(EditAnywhere, Category="Input")
 	UInputAction* JumpAction;
@@ -50,17 +53,14 @@ protected:
 	UInputAction* MouseLookAction;
 
 public:
-
 	/** Constructor */
-	AMP_CPPCharacter();	
+	AMP_CPPCharacter();
 
 protected:
-
 	/** Initialize input action bindings */
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 
 protected:
-
 	/** Called for movement input */
 	void Move(const FInputActionValue& Value);
 
@@ -68,7 +68,6 @@ protected:
 	void Look(const FInputActionValue& Value);
 
 public:
-
 	/** Handles move inputs from either controls or UI interfaces */
 	UFUNCTION(BlueprintCallable, Category="Input")
 	virtual void DoMove(float Right, float Forward);
@@ -86,11 +85,23 @@ public:
 	virtual void DoJumpEnd();
 
 public:
-
 	/** Returns CameraBoom subobject **/
 	FORCEINLINE class USpringArmComponent* GetCameraBoom() const { return CameraBoom; }
 
 	/** Returns FollowCamera subobject **/
 	FORCEINLINE class UCameraComponent* GetFollowCamera() const { return FollowCamera; }
-};
+	// Implement IMP_Player interface
+	virtual USkeletalMeshComponent* GetMeshComponent_Implementation() override;
+	virtual void GrantArmor_Implementation(int32 ArmorAmount) override;
+	// end IMP_Player interface
 
+	// 1 override GetLifetimeReplicatedProps
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+
+protected:
+	UPROPERTY(ReplicatedUsing=OnRep_Armor, VisibleAnywhere)
+	int32 Armor = 0;
+private:
+	UFUNCTION()
+	void OnRep_Armor(int32 OldArmor);
+};

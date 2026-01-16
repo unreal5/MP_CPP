@@ -4,7 +4,7 @@
 #include "MP_Armor.h"
 
 #include "Components/SphereComponent.h"
-#include "GameFramework/Character.h"
+#include "Interact/MP_Player.h"
 
 
 // Sets default values
@@ -19,7 +19,7 @@ AMP_Armor::AMP_Armor()
 	SphereMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Sphere Mesh"));
 	SphereMesh->SetupAttachment(RootComponent);
 	SphereMesh->SetIsReplicated(true);
-	
+
 	// Create Sphere Collision
 	SphereCollision = CreateDefaultSubobject<USphereComponent>(TEXT("SphereCollision"));
 	SphereCollision->SetupAttachment(RootComponent);
@@ -44,8 +44,12 @@ void AMP_Armor::NotifyActorBeginOverlap(AActor* OtherActor)
 
 	// AttachToActor只挂接到OtherActor的根组件上，而Character的根组件是CapsuleComponent，不是我们想要的Mesh组件
 	//AttachToActor(OtherActor, FAttachmentTransformRules::SnapToTargetNotIncludingScale, "ArmorSocket");
-	ACharacter* Character = Cast<ACharacter>(OtherActor);
-	if (!Character) return;
-	SphereMesh->AttachToComponent(Character->GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale,
-	                              "ArmorSocket");
+	auto Mesh = IMP_Player::Execute_GetMeshComponent(OtherActor);
+	if (!Mesh) return;
+	
+	SphereMesh->AttachToComponent(Mesh, FAttachmentTransformRules::SnapToTargetNotIncludingScale, "ArmorSocket");
+	IMP_Player::Execute_GrantArmor(OtherActor, ArmorAmount);
+	
+	// 关闭自身的碰撞
+	SphereCollision->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 }

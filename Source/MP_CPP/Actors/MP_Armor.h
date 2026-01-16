@@ -28,4 +28,6 @@ private:
 	TObjectPtr<class UStaticMeshComponent> SphereMesh;
 	UPROPERTY()
 	TObjectPtr<class USphereComponent> SphereCollision;
+	UPROPERTY(EditAnywhere, Category="Armor", Meta=(ClampMin="1", ClampMax="100"))
+	int32 ArmorAmount = 25;
 };

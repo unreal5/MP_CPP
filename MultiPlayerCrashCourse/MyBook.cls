@@ -210,11 +210,12 @@
 \renewcommand*{\lstlistingname}{示例}
 \renewcommand*{\lstlistingnamestyle}{\bfseries}
 % Configure the listings
-\definecolor{listingkeywords}{rgb}{0.0, 0.0, 1.0}
-\definecolor{listingidentifiers}{rgb}{0, 0, 0}
-\definecolor{listingcomments}{rgb}{0.25, 0.5, 0.5}
-\definecolor{listingstrings}{rgb}{0.73, 0.13, 0.13}
+\definecolor{listingkeywords}{HTML}{569CD6}
+\definecolor{listingidentifiers}{HTML}{000000}
+\definecolor{listingcomments}{HTML}{57A64A}
+\definecolor{listingstrings}{HTML}{D69D85}
 \definecolor{listingnumbers}{rgb}{0.25, 0.25, 0.25}
+\definecolor{ueemph}{HTML}{bd63c5}
 % Define a fancy style
 \lstnewenvironment{code}[1][]
 {
@@ -245,8 +246,8 @@
         framerule=.7pt,
         emph=[2]{override,final},
         emphstyle=[2]{\color{blue}\bfseries},       
-        emph=[3]{UPROPERTY,UFUNCTION,UENUM,UCLASS,USTRUCT},
-        emphstyle=[3]{\color{orange!70!black}\bfseries},
+        emph=[3]{UPROPERTY,UFUNCTION,UENUM,UCLASS,USTRUCT,DOREPLIFETIME},
+        emphstyle=[3]{\color{ueemph}\bfseries},
         emph=[4]{BlueprintType,EditDefaultsOnly,BlueprintReadOnly},
         emphstyle=[4]{\color{cyan!70!blue}},
         tabsize=2,
